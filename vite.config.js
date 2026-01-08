@@ -5,6 +5,8 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   build: {
-    outDir: "dist", // مهم لـ Vercel
+    outDir: "dist", // مكان ملفات البيلد النهائي
+    sourcemap: false,
   },
+  base: "./", // مهم لتشغيل SPA على Vercel أو أي سيرفر ثابت
 });
