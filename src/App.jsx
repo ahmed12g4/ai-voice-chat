@@ -1,3 +1,4 @@
+/* eslint-disable no-undef */
 /* eslint-disable no-unused-vars */
 import React, { useState, useRef, useEffect } from "react";
 import "./App.css";
@@ -56,9 +57,8 @@ const App = () => {
   const messagesBoxRef = useRef(null);
   const recognitionRef = useRef(null);
 
-  // API Key
-  const API_KEY =
-    "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";
+  // **تم إزالة API_KEY من هنا** تمامًا
+  // React مش هيتعامل مع المفتاح مباشرة
 
   // نظام AI محسّن مع تركيز على التصحيح والتحليل
   const callAIAPI = async (message) => {
@@ -68,34 +68,20 @@ const App = () => {
       const messageType = analyzeMessageType(message);
       const systemPrompt = buildSystemPrompt(messageType);
 
-      const response = await fetch(
-        "https://openrouter.ai/api/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${API_KEY}`,
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://smart-language-helper.demo",
-            "X-Title": "Smart Language Assistant",
-          },
-          body: JSON.stringify({
-            model: "openai/gpt-3.5-turbo",
-            messages: [
-              {
-                role: "system",
-                content: systemPrompt,
-              },
-              {
-                role: "user",
-                content: message,
-              },
-              ...getConversationContext(),
-            ],
-            temperature: 0.7,
-            max_tokens: 800,
-          }),
-        }
-      );
+      // **التغيير هنا فقط**: بدل ما نروح مباشرة لـ OpenRouter، نروح للـ API Route اللي عملناه
+ const response = await fetch("/api/chat", {
+   method: "POST",
+   headers: { "Content-Type": "application/json" },
+   body: JSON.stringify({
+     messages: [
+       { role: "system", content: systemPrompt },
+       { role: "user", content: message },
+       ...getConversationContext(),
+     ],
+     temperature: 0.7,
+     max_tokens: 800,
+   }),
+ });
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -214,14 +200,7 @@ const App = () => {
     ];
 
     // كلمات مفتاحية للتحليل
-    const analysisKeywords = [
-      "حلل",
-      "تحليل",
-      "راجع",
-      "مراجعة",
-      "تقييم",
-      "قيم",
-    ];
+    const analysisKeywords = ["حلل", "تحليل", "راجع", "مراجعة", "تقييم", "قيم"];
 
     if (correctionKeywords.some((keyword) => lowerMessage.includes(keyword))) {
       return "correction";
@@ -308,7 +287,8 @@ const App = () => {
     const mistakes = analyzeSentenceForMistakes(message);
 
     if (mistakes.length > 0) {
-      let response = "لقد قمت بتحليل الجملة ووجدت بعض النقاط التي يمكن تحسينها:\n\n";
+      let response =
+        "لقد قمت بتحليل الجملة ووجدت بعض النقاط التي يمكن تحسينها:\n\n";
 
       mistakes.forEach((mistake, index) => {
         response += `${index + 1}. الخطأ: "${mistake.error}"\n`;
@@ -317,8 +297,7 @@ const App = () => {
         response += `   الشرح: ${mistake.note}\n\n`;
       });
 
-      response +=
-        "استمر في التدريب وستلاحظ تحسناً ملحوظاً في مهاراتك اللغوية.";
+      response += "استمر في التدريب وستلاحظ تحسناً ملحوظاً في مهاراتك اللغوية.";
       return response;
     }
 
@@ -482,8 +461,7 @@ const App = () => {
         accuracy: newAccuracy,
         level: newLevel,
         wordsLearned:
-          prev.wordsLearned +
-          mistakes.filter((m) => m.type === "لغوي").length,
+          prev.wordsLearned + mistakes.filter((m) => m.type === "لغوي").length,
       };
     });
   };
@@ -810,9 +788,7 @@ const App = () => {
   // مسح المحادثة
   const clearChat = () => {
     if (
-      window.confirm(
-        "هل أنت متأكد من حذف المحادثة؟ سيتم حذف جميع الرسائل."
-      )
+      window.confirm("هل أنت متأكد من حذف المحادثة؟ سيتم حذف جميع الرسائل.")
     ) {
       setMessages([
         {
@@ -833,7 +809,8 @@ const App = () => {
 
     const modeMessages = {
       auto: "تم التفعيل: التحليل التلقائي - سيتم تحليل رسائلك تلقائياً",
-      grammar: "تم التفعيل: وضع التصحيح النحوي - سيتم التركيز على تصحيح الأخطاء",
+      grammar:
+        "تم التفعيل: وضع التصحيح النحوي - سيتم التركيز على تصحيح الأخطاء",
       conversation:
         "تم التفعيل: وضع المحادثة - سيتم التركيز على المحادثة الطبيعية",
     };
@@ -1058,9 +1035,7 @@ const App = () => {
                   <p className="suggestions-title">اقتراحات سريعة:</p>
                   <div className="suggestions-buttons">
                     <button
-                      onClick={() =>
-                        setInputText("صحح لي: انا رايح المدرسه")
-                      }
+                      onClick={() => setInputText("صحح لي: انا رايح المدرسه")}
                     >
                       طلب تصحيح
                     </button>
@@ -1226,9 +1201,7 @@ const App = () => {
                       disabled={!currentSentence || isListening}
                       className="record-btn"
                     >
-                      {currentSentence
-                        ? "بدء التسجيل"
-                        : "اختر جملة أولاً"}
+                      {currentSentence ? "بدء التسجيل" : "اختر جملة أولاً"}
                     </button>
                   )}
                 </div>
