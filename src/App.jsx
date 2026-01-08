@@ -49,7 +49,7 @@ const App = () => {
     conversationStyle: "احترافي",
   });
 
-  const [analysisMode, setAnalysisMode] = useState("auto"); // auto, grammar, conversation
+  const [analysisMode, setAnalysisMode] = useState("auto");
   const [showDetailedAnalysis, setShowDetailedAnalysis] = useState(false);
   const [savedCorrections, setSavedCorrections] = useState([]);
 
@@ -57,71 +57,220 @@ const App = () => {
   const messagesBoxRef = useRef(null);
   const recognitionRef = useRef(null);
 
-  // API Key
-const API_KEY = 
-  typeof process !== 'undefined' && process.env.REACT_APP_OPENROUTER_API_KEY 
-    ? process.env.REACT_APP_OPENROUTER_API_KEY 
-    : "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";
+  // الحصول على الـ API Key من البيئة - الآمن
+  const API_KEY = import.meta.env?.VITE_OPENROUTER_API_KEY || "";
 
-
-  // نظام AI محسّن مع تركيز على التصحيح والتحليل
+  // دالة callAIAPI المحسنة مع نظام هجين
   const callAIAPI = async (message) => {
     try {
       setIsUsingFallback(false);
 
-      const messageType = analyzeMessageType(message);
-      const systemPrompt = buildSystemPrompt(messageType);
+      // الخيار 1: استخدام الردود الذكية المحلية (الأفضل والأكثر أماناً)
+      const localResponse = getSmartLocalResponse(message);
 
-      const response = await fetch(
-        "https://openrouter.ai/api/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${API_KEY}`,
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://smart-language-helper.demo",
-            "X-Title": "Smart Language Assistant",
-          },
-          body: JSON.stringify({
-            model: "openai/gpt-3.5-turbo",
+      // الخيار 2: محاولة الاتصال بـ OpenRouter إذا كان هناك API Key
+      if (API_KEY && API_KEY.trim() !== "") {
+        try {
+          const requestBody = {
+            model: "meta-llama/llama-3.2-3b-instruct:free",
             messages: [
               {
                 role: "system",
-                content: systemPrompt,
+                content: buildSystemPrompt(analyzeMessageType(message)),
               },
               {
                 role: "user",
                 content: message,
               },
-              ...getConversationContext(),
             ],
             temperature: 0.7,
-            max_tokens: 800,
-          }),
+            max_tokens: 1000,
+          };
+
+          const response = await fetch(
+            "https://openrouter.ai/api/v1/chat/completions",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${API_KEY}`,
+                "HTTP-Referer":
+                  window.location.origin || "http://localhost:5173",
+                "X-Title": "Smart Language Platform",
+              },
+              body: JSON.stringify(requestBody),
+            }
+          );
+
+          if (response.ok) {
+            const data = await response.json();
+
+            if (data.choices && data.choices[0] && data.choices[0].message) {
+              return data.choices[0].message.content;
+            }
+          }
+        } catch (apiError) {
+          console.log("خطأ في API، جارٍ استخدام الرد المحلي:", apiError);
+          // استمرار مع الرد المحلي
         }
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const data = await response.json();
-
-      if (data.choices && data.choices[0] && data.choices[0].message) {
-        const responseText = data.choices[0].message.content;
-        updateUserMood(message, responseText);
-        return responseText;
-      } else {
-        throw new Error("Invalid API response structure");
-      }
+      // العودة للرد المحلي إذا فشل الاتصال أو لم يكن هناك API Key
+      return localResponse;
     } catch (error) {
-      console.error("Error calling AI API:", error);
+      console.error("خطأ في استدعاء المساعد:", error);
       setIsUsingFallback(true);
-      return getFallbackResponse(message);
+      return getSmartLocalResponse(message);
     }
   };
 
-  // بناء برومبت النظام حسب نوع الرسالة
+  // دالة الردود الذكية المحلية
+  const getSmartLocalResponse = (message) => {
+    const mistakes = analyzeSentenceForMistakes(message);
+    const messageType = analyzeMessageType(message);
+
+    let response = "";
+
+    // بناء رد ذكي حسب نوع الرسالة
+    switch (messageType) {
+      case "correction":
+        response = buildCorrectionResponse(mistakes, message);
+        break;
+
+      case "question":
+        response = getIntelligentQuestionResponse(message);
+        break;
+
+      case "analysis":
+        response = analyzeSentence(message);
+        break;
+
+      default:
+        response = getConversationalResponse(message);
+    }
+
+    // تحديث الإحصائيات إذا كان هناك أخطاء
+    if (mistakes.length > 0) {
+      updateUserStats(mistakes);
+    } else if (messageType !== "question") {
+      // زيادة النقاط للجمل الصحيحة
+      setUserProgress((prev) => ({
+        ...prev,
+        points: prev.points + 10,
+        exercisesCompleted: prev.exercisesCompleted + 1,
+      }));
+    }
+
+    return response;
+  };
+
+  // بناء رد التصحيح
+  const buildCorrectionResponse = (mistakes, originalMessage) => {
+    if (mistakes.length > 0) {
+      let response = "🔍 **نتائج التحليل:**\n\n";
+
+      mistakes.forEach((mistake, index) => {
+        response += `**${index + 1}. الخطأ:** "${mistake.error}"\n`;
+        response += `   **التصحيح:** "${mistake.correction}"\n`;
+        response += `   **النوع:** ${mistake.type}\n`;
+        response += `   **الشرح:** ${mistake.note}\n\n`;
+      });
+
+      response +=
+        "💡 **النصيحة:** حاول قراءة الجملة بصوت عال بعد التصحيح لترسيخ الصورة الصحيحة.";
+
+      // حفظ التصحيح
+      setSavedCorrections((prev) => [
+        ...prev,
+        {
+          original: originalMessage,
+          mistakes: mistakes,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+
+      return response;
+    } else {
+      const correctResponses = [
+        "🎉 **ممتاز!** الجملة سليمة لغوياً.\n\nلا توجد أخطاء في كتابتك. استمر في هذا المستوى الرائع!",
+        "✅ **جملة صحيحة 100%**\n\nأداء ممتاز! جملتك خالية من الأخطاء النحوية والإملائية.",
+        "🌟 **كتابة رائعة!**\n\nجملتك صحيحة وتتبع قواعد اللغة العربية بدقة. أحسنت!",
+      ];
+      return correctResponses[
+        Math.floor(Math.random() * correctResponses.length)
+      ];
+    }
+  };
+
+  // دالة للردود الذكية على الأسئلة
+  const getIntelligentQuestionResponse = (question) => {
+    const lowerQuestion = question.toLowerCase();
+
+    // أسئلة عن الفرق بين الكلمات
+    if (lowerQuestion.includes("الفرق بين")) {
+      if (lowerQuestion.includes("أن") || lowerQuestion.includes("إن")) {
+        return `**الفرق بين "أن" و"إن":**
+
+1. **"أن" المصدريَّة:**
+   - تُستخدم قبل الفعل المضارع لتنصيبه
+   - مثال: "أريد أن أتعلم"
+   - في الإعراب: حرف مصدري ونصب
+
+2. **"إنَّ" واخواتها:**
+   - حروف توكيد ونصب تدخل على المبتدأ والخبر
+   - مثال: "إنَّ العلمَ نورٌ"
+   - أخواتها: أنَّ، كأنَّ، لكنَّ، ليت، لعل
+
+3. **"إن" الشرطية:**
+   - تدخل على الجملة الشرطية
+   - مثال: "إن تجتهد تنجح"
+
+**تلميح:** "أن" قبل الفعل، "إنَّ" قبل الاسم.`;
+      }
+    }
+
+    // أسئلة عن القواعد
+    if (lowerQuestion.includes("المبتدأ") || lowerQuestion.includes("خبر")) {
+      return `**المبتدأ والخبر:**
+
+**المبتدأ:**
+- اسم مرفوع يأتي في أول الجملة
+- مثال: "الطالبُ مجتهد"
+
+**الخبر:**
+- يكمل معنى المبتدأ ويتمم الفائدة
+- أنواعه:
+  1. مفرد: "الكتابُ مفيد"
+  2. جملة فعلية: "الطالبُ يدرس"
+  3. جملة اسمية: "الأبُ ابنُه طالب"
+  4. شبه جملة: "الكتابُ على الطاولة"`;
+    }
+
+    // أسئلة عامة
+    if (lowerQuestion.includes("نصائح") || lowerQuestion.includes("تحسين")) {
+      return `**نصائح لتحسين اللغة العربية:**
+
+1. **القراءة اليومية:** اقرأ مقالاً أو قصة قصيرة يومياً
+2. **الكتابة المنتظمة:** اكتب فقرة صغيرة يومياً
+3. **تصحيح الأخطاء:** راجع أخطائك وتعلم منها
+4. **الممارسة:** استخدم اللغة في المحادثات اليومية
+5. **الاستماع:** استمع إلى البرامج والخطابات العربية
+
+**تذكر:** التكرار هو مفتاح الإتقان!`;
+    }
+
+    // رد افتراضي للأسئلة
+    return `شكراً لسؤالك! يمكنني مساعدتك في:
+    
+1. **تصحيح الأخطاء اللغوية** - اكتب جملة وسأصححها
+2. **شرح القواعد النحوية** - اسأل عن قاعدة معينة
+3. **تحليل النصوص** - أعطني نصاً لتحليله
+4. **تحسين مهارات الكتابة** - سأقدم نصائح عملية
+
+ما الذي تريد معرفته تحديداً؟`;
+  };
+
+  // دالة buildSystemPrompt محسنة
   const buildSystemPrompt = (messageType) => {
     const basePrompt = `أنت مساعد لغوي ذكي متخصص في اللغة العربية. مهمتك الأساسية هي:
 
@@ -189,6 +338,54 @@ const API_KEY =
     return modePrompts[messageType] || modePrompts.conversation;
   };
 
+  // تحليل الجملة
+  const analyzeSentence = (sentence) => {
+    const words = sentence.split(/\s+/);
+    const mistakes = analyzeSentenceForMistakes(sentence);
+
+    let analysis = `**تحليل الجملة:** "${sentence}"\n\n`;
+    analysis += `📊 **إحصائيات:**\n`;
+    analysis += `- عدد الكلمات: ${words.length}\n`;
+    analysis += `- عدد الأخطاء المكتشفة: ${mistakes.length}\n\n`;
+
+    if (words.length < 5) {
+      analysis += `💡 **ملاحظة:** الجملة قصيرة. حاول إضافة تفاصيل أكثر.\n\n`;
+    }
+
+    if (!/[.!؟]/.test(sentence)) {
+      analysis += `🔸 **تحسين:** أضف علامة ترقيم مناسبة في النهاية (! . ؟)\n\n`;
+    }
+
+    if (mistakes.length === 0) {
+      analysis += `✅ **التقييم:** الجملة سليمة لغوياً ونحوياً.\n`;
+      analysis += `🎯 **نصيحة:** استمر في التدريب للحفاظ على هذا المستوى.`;
+    } else {
+      analysis += `📝 **التصحيحات المطلوبة:**\n`;
+      mistakes.forEach((mistake, index) => {
+        analysis += `${index + 1}. "${mistake.error}" ← "${
+          mistake.correction
+        }" (${mistake.type})\n`;
+      });
+    }
+
+    return analysis;
+  };
+
+  // دالة للردود المحادثة
+  const getConversationalResponse = (message) => {
+    const responses = [
+      "شكراً لك على رسالتك! يمكنني مساعدتك في تصحيح أي أخطاء لغوية في كتابتك.",
+      "أهلاً بك! كيف يمكنني مساعدتك في تطوير مهاراتك اللغوية اليوم؟",
+      "مرحباً! هل تريد أن أعلمك قواعد اللغة العربية بطريقة سهلة؟",
+      "سعيد بالتواصل معك! اكتب لي جملة وسأحللها لك وأصحح أي أخطاء.",
+      "أنا هنا لمساعدتك في تعلم اللغة العربية. ما الذي تريد تحسينه اليوم؟",
+      "مرحباً! أنا مساعدك اللغوي. يمكنني تصحيح كتابتك أو الإجابة على أسئلتك اللغوية.",
+      "أهلًا وسهلًا! اكتب لي ما تريد وسأساعدك في تحسين لغتك العربية.",
+    ];
+
+    return responses[Math.floor(Math.random() * responses.length)];
+  };
+
   // تحليل نوع الرسالة بذكاء
   const analyzeMessageType = (message) => {
     const lowerMessage = message.toLowerCase();
@@ -202,6 +399,8 @@ const API_KEY =
       "صواب",
       "خطئي",
       "أخطأت",
+      "صحيح",
+      "تصحيح",
     ];
 
     // كلمات مفتاحية للأسئلة
@@ -215,17 +414,13 @@ const API_KEY =
       "من",
       "هل",
       "؟",
+      "اشرح",
+      "ما معنى",
+      "ما هو",
     ];
 
     // كلمات مفتاحية للتحليل
-    const analysisKeywords = [
-      "حلل",
-      "تحليل",
-      "راجع",
-      "مراجعة",
-      "تقييم",
-      "قيم",
-    ];
+    const analysisKeywords = ["حلل", "تحليل", "راجع", "مراجعة", "تقييم", "قيم"];
 
     if (correctionKeywords.some((keyword) => lowerMessage.includes(keyword))) {
       return "correction";
@@ -307,28 +502,6 @@ const API_KEY =
     return topics;
   };
 
-  // رد احتياطي محسّن
-  const getFallbackResponse = (message) => {
-    const mistakes = analyzeSentenceForMistakes(message);
-
-    if (mistakes.length > 0) {
-      let response = "لقد قمت بتحليل الجملة ووجدت بعض النقاط التي يمكن تحسينها:\n\n";
-
-      mistakes.forEach((mistake, index) => {
-        response += `${index + 1}. الخطأ: "${mistake.error}"\n`;
-        response += `   التصحيح: "${mistake.correction}"\n`;
-        response += `   النوع: ${mistake.type}\n`;
-        response += `   الشرح: ${mistake.note}\n\n`;
-      });
-
-      response +=
-        "استمر في التدريب وستلاحظ تحسناً ملحوظاً في مهاراتك اللغوية.";
-      return response;
-    }
-
-    return "شكراً لك على رسالتك. يمكنني مساعدتك في تصحيح الأخطاء اللغوية أو الإجابة على أسئلتك. كيف يمكنني خدمتك؟";
-  };
-
   // تحليل الجملة لاكتشاف الأخطاء - نظام محسّن
   const analyzeSentenceForMistakes = (sentence) => {
     const mistakes = [];
@@ -388,12 +561,6 @@ const API_KEY =
         correction: "كانوا",
         type: "نحوي",
         note: "الفعل الماضي مع واو الجماعة يحتاج ألف قبل الواو",
-      },
-      {
-        pattern: /\bهو\b/gi,
-        correction: "هو",
-        type: "تحقق",
-        note: "تأكد من استخدام الضمير في سياقه الصحيح",
       },
     ];
 
@@ -486,8 +653,7 @@ const API_KEY =
         accuracy: newAccuracy,
         level: newLevel,
         wordsLearned:
-          prev.wordsLearned +
-          mistakes.filter((m) => m.type === "لغوي").length,
+          prev.wordsLearned + mistakes.filter((m) => m.type === "لغوي").length,
       };
     });
   };
@@ -693,21 +859,8 @@ const API_KEY =
     setInputText("");
     setIsLoading(true);
 
-    // تحليل محلي للأخطاء
+    // تحليل محلي للأخطاء (يتم الآن في getSmartLocalResponse)
     const mistakes = analyzeSentenceForMistakes(inputText.trim());
-    if (mistakes.length > 0) {
-      updateUserStats(mistakes);
-
-      // حفظ التصحيحات
-      setSavedCorrections((prev) => [
-        ...prev,
-        {
-          original: inputText.trim(),
-          mistakes: mistakes,
-          timestamp: new Date().toISOString(),
-        },
-      ]);
-    }
 
     try {
       const aiResponse = await callAIAPI(inputText.trim());
@@ -726,8 +879,8 @@ const API_KEY =
       console.error("Send message error:", error);
       const errorMessage = {
         text:
-          "حدث خطأ في الاتصال. الرجاء المحاولة مرة أخرى.\n\n" +
-          getFallbackResponse(inputText.trim()),
+          "حدث خطأ في الاتصال. جارٍ استخدام النظام المحلي...\n\n" +
+          getSmartLocalResponse(inputText.trim()),
         isUser: false,
         time: new Date().toLocaleTimeString("ar-EG", {
           hour: "2-digit",
@@ -814,9 +967,7 @@ const API_KEY =
   // مسح المحادثة
   const clearChat = () => {
     if (
-      window.confirm(
-        "هل أنت متأكد من حذف المحادثة؟ سيتم حذف جميع الرسائل."
-      )
+      window.confirm("هل أنت متأكد من حذف المحادثة؟ سيتم حذف جميع الرسائل.")
     ) {
       setMessages([
         {
@@ -837,7 +988,8 @@ const API_KEY =
 
     const modeMessages = {
       auto: "تم التفعيل: التحليل التلقائي - سيتم تحليل رسائلك تلقائياً",
-      grammar: "تم التفعيل: وضع التصحيح النحوي - سيتم التركيز على تصحيح الأخطاء",
+      grammar:
+        "تم التفعيل: وضع التصحيح النحوي - سيتم التركيز على تصحيح الأخطاء",
       conversation:
         "تم التفعيل: وضع المحادثة - سيتم التركيز على المحادثة الطبيعية",
     };
@@ -1062,9 +1214,7 @@ const API_KEY =
                   <p className="suggestions-title">اقتراحات سريعة:</p>
                   <div className="suggestions-buttons">
                     <button
-                      onClick={() =>
-                        setInputText("صحح لي: انا رايح المدرسه")
-                      }
+                      onClick={() => setInputText("صحح لي: انا رايح المدرسه")}
                     >
                       طلب تصحيح
                     </button>
@@ -1230,9 +1380,7 @@ const API_KEY =
                       disabled={!currentSentence || isListening}
                       className="record-btn"
                     >
-                      {currentSentence
-                        ? "بدء التسجيل"
-                        : "اختر جملة أولاً"}
+                      {currentSentence ? "بدء التسجيل" : "اختر جملة أولاً"}
                     </button>
                   )}
                 </div>
