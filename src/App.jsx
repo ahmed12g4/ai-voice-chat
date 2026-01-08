@@ -58,7 +58,7 @@ const App = () => {
 
   // API Key
   const API_KEY =
-    "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";
+    "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";
 
   // نظام AI محسّن مع تركيز على التصحيح والتحليل
   const callAIAPI = async (message) => {
